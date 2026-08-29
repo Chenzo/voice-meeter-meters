@@ -34,15 +34,25 @@ Could add a settings/tray icon instead of hardcoded CHANNELS list
 
 SET UP
 
+```
 python -m venv venv
 venv\Scripts\activate
-pip install voicemeeter-api
+pip install voicemeeter-api pyinstaller
 python vm_monitor.py
-
+```
 
 
 
 RUNNING
-
+```
 venv\Scripts\activate
 python vm_monitor.py
+```
+
+
+BUILDING
+
+```
+venv\Scripts\activate
+venv\Scripts\pyinstaller.exe --onefile --windowed --icon=icon.ico --name "VoiceMeeterMeters" vm_monitor.py
+```
