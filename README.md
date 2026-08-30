@@ -59,3 +59,7 @@ git tag -a v1.0.0 -m "v1.0.0"
 git push origin v1.0.0
 gh release create v1.0.0 dist/VoiceMeeterMeters.exe --title "v1.0.0" --notes "Initial release"
 ```
+
+-----
+
+More Chenzo at [Fully Deprecated](https://www.chenzorama.com/posts/voice-meeter-meter/)
