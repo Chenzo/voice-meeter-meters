@@ -1,8 +1,22 @@
-# Voice Meeter Meters
+# <img src="icon.ico" width="32" height="32"> Voice Meeter Meters
 
 A simple, small visual display for cleaner desktop space for Voice Meeter Potato. 
 
 Basically, I want to see my levels without the massively huge Voice Meeter GUI while I'm streaming - just so I'm aware of any audio problems. This is a simple tiny system tray app that displays Inputs and Outputs and their volume levels. 
+
+![VoiceMeeterMeters widget](screenshots/vmm_screenshot.png) ![Tray menu](screenshots/vmm_menu.png)
+
+-----
+
+## Download:
+
+**Option 1: Grab the prebuilt .exe**
+
+Download `VoiceMeeterMeters.exe` from the [latest release](https://github.com/Chenzo/voice-meeter-meters/releases/) and run it - no Python required.
+
+**Option 2: Build it yourself**
+
+Clone the repo and run the Install/Build commands below to produce your own `dist\VoiceMeeterMeters.exe`.
 
 -----
 
@@ -37,3 +51,11 @@ venv\Scripts\activate
 venv\Scripts\pyinstaller.exe --onefile --windowed --icon=icon.ico --add-data "icon.ico;." --name "VoiceMeeterMeters" vm_monitor.py
 ```
 
+
+### Release:
+
+```
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+gh release create v1.0.0 dist/VoiceMeeterMeters.exe --title "v1.0.0" --notes "Initial release"
+```
