@@ -17,8 +17,9 @@ see `LAUNCH_VOICEMEETER` below).
 
 Configuration
 -------------
-Edit the CHANNELS list below to pick exactly which channels to show, and
-in what order. Each entry is a dict:
+CHANNELS below lists every channel the tray menu can show or hide (checked
+by default). Edit it to change what's available and its display order; each
+entry is a dict:
 
     {"label": "A1", "kind": "bus",   "index": 0}
     {"label": "Mic", "kind": "strip", "index": 0}
@@ -33,8 +34,8 @@ For VoiceMeeter POTATO the index mapping is:
         0-4 = physical A1-A5 (hardware outputs)
         5-7 = virtual  B1-B3
 
-So "A1, A2, B1, B2, B3" (as you described) = bus indices 0, 1, 5, 6, 7.
-That's the default configuration below - change it to match your routing.
+The default CHANNELS below covers I1-I5, A1-A5, and B1-B3; use the tray
+menu's checkboxes to pick which of those are actually shown.
 """
 
 import ctypes
@@ -102,6 +103,30 @@ def _save_position(x, y):
         pass
 
 
+def _channels_file():
+    appdata = os.getenv("APPDATA") or os.path.expanduser("~")
+    return os.path.join(appdata, "VoiceMeeterMeters", "channels.json")
+
+
+def _load_enabled_channels():
+    try:
+        with open(_channels_file()) as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = {}
+    return {ch["label"]: bool(saved.get(ch["label"], True)) for ch in CHANNELS}
+
+
+def _save_enabled_channels(enabled):
+    path = _channels_file()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(enabled, f)
+    except OSError:
+        pass
+
+
 STARTUP_REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 STARTUP_REGISTRY_NAME = "VoiceMeeterMeters"
 
@@ -133,12 +158,20 @@ def _set_launch_at_startup(enabled):
 KIND = "potato"            # 'basic', 'banana', or 'potato'
 LAUNCH_VOICEMEETER = False  # True = auto-launch VM if it isn't running
 
-# Which channels to show, in display order.
+# All channels the tray menu lets you show/hide, in display order.
+# Visibility (which are actually drawn) is controlled from the tray menu and
+# persisted separately - see _load_enabled_channels / _save_enabled_channels.
 CHANNELS = [
     {"label": "I1", "kind": "strip", "index": 0},
     {"label": "I2", "kind": "strip", "index": 1},
+    {"label": "I3", "kind": "strip", "index": 2},
+    {"label": "I4", "kind": "strip", "index": 3},
+    {"label": "I5", "kind": "strip", "index": 4},
     {"label": "A1", "kind": "bus", "index": 0},
     {"label": "A2", "kind": "bus", "index": 1},
+    {"label": "A3", "kind": "bus", "index": 2},
+    {"label": "A4", "kind": "bus", "index": 3},
+    {"label": "A5", "kind": "bus", "index": 4},
     {"label": "B1", "kind": "bus", "index": 5},
     {"label": "B2", "kind": "bus", "index": 6},
     {"label": "B3", "kind": "bus", "index": 7},
@@ -251,6 +284,7 @@ class MonitorWidget(tk.Tk):
         self.configure(bg=BG_COLOR)
 
         self._drag = {"x": 0, "y": 0}
+        self.enabled = _load_enabled_channels()
         self._build_ui()
         self._bind_drag()
         self._bind_menu()
@@ -270,7 +304,14 @@ class MonitorWidget(tk.Tk):
 
     def _build_tray_icon(self):
         image = Image.open(ICON_PATH)
+        input_labels = [ch["label"] for ch in CHANNELS if ch["kind"] == "strip"]
+        a_labels = [ch["label"] for ch in CHANNELS if ch["kind"] == "bus" and ch["index"] < 5]
+        b_labels = [ch["label"] for ch in CHANNELS if ch["kind"] == "bus" and ch["index"] >= 5]
+
         items = [pystray.MenuItem("Show/Hide", self._tray_toggle_visibility, default=True)]
+        items.append(pystray.MenuItem("Inputs", self._build_channel_menu(input_labels)))
+        items.append(pystray.MenuItem("A Outputs", self._build_channel_menu(a_labels)))
+        items.append(pystray.MenuItem("B Outputs", self._build_channel_menu(b_labels)))
         if getattr(sys, "frozen", False):
             items.append(
                 pystray.MenuItem(
@@ -281,6 +322,25 @@ class MonitorWidget(tk.Tk):
             )
         items.append(pystray.MenuItem("Quit", self._tray_quit))
         return pystray.Icon("VoiceMeeterMeters", image, TITLE_TEXT, pystray.Menu(*items))
+
+    def _build_channel_menu(self, labels):
+        return pystray.Menu(
+            *(
+                pystray.MenuItem(
+                    label,
+                    self._tray_toggle_channel(label),
+                    checked=lambda item, label=label: self.enabled.get(label, True),
+                )
+                for label in labels
+            )
+        )
+
+    def _tray_toggle_channel(self, label):
+        def _toggle(icon, item):
+            self.enabled[label] = not self.enabled.get(label, True)
+            _save_enabled_channels(self.enabled)
+            self.after(0, self._refresh_bars)
+        return _toggle
 
     def _tray_toggle_visibility(self, icon, item):
         self.after(0, self._toggle_visibility)
@@ -301,17 +361,29 @@ class MonitorWidget(tk.Tk):
 
     def _build_ui(self):
         self._build_title_bar()
+        self._build_bars()
 
+    def _refresh_bars(self):
+        self.bar_frame.destroy()
+        self._build_bars()
+        self._bind_drag_recursive(self.bar_frame)
+        self._bind_menu_recursive(self.bar_frame)
+        self.update_idletasks()
+
+    def _build_bars(self):
         pad = 8
         label_font = tkfont.Font(family="Segoe UI", size=9, weight="bold")
         frame = tk.Frame(self, bg=BG_COLOR, padx=pad, pady=pad)
         frame.pack()
+        self.bar_frame = frame
 
-        self.bars = []
-        for i, ch in enumerate(CHANNELS):
+        visible = [(i, ch) for i, ch in enumerate(CHANNELS) if self.enabled.get(ch["label"], True)]
+
+        self.bars = {}
+        for pos, (i, ch) in enumerate(visible):
             if ORIENTATION == "horizontal":
                 cell = tk.Frame(frame, bg=BG_COLOR)
-                cell.grid(row=0, column=i, padx=6)
+                cell.grid(row=0, column=pos, padx=6)
                 canvas = tk.Canvas(
                     cell, width=BAR_WIDTH, height=BAR_HEIGHT, bg=BG_COLOR, highlightthickness=0
                 )
@@ -322,7 +394,7 @@ class MonitorWidget(tk.Tk):
                 ).pack()
             else:
                 cell = tk.Frame(frame, bg=BG_COLOR)
-                cell.grid(row=i, column=0, pady=4, sticky="w")
+                cell.grid(row=pos, column=0, pady=4, sticky="w")
                 canvas = tk.Canvas(
                     cell, width=BAR_WIDTH, height=BAR_HEIGHT, bg=BG_COLOR, highlightthickness=0
                 )
@@ -331,7 +403,7 @@ class MonitorWidget(tk.Tk):
                 tk.Label(
                     cell, text=ch["label"], font=label_font, fg=TEXT_COLOR, bg=BG_COLOR
                 ).grid(row=0, column=1, padx=(6, 0))
-            self.bars.append((canvas, *zone_rects))
+            self.bars[i] = (canvas, *zone_rects)
 
     def _build_title_bar(self):
         title_font = tkfont.Font(family="Segoe UI", size=8, weight="bold")
@@ -421,8 +493,11 @@ class MonitorWidget(tk.Tk):
             while True:
                 kind, payload = self.queue.get_nowait()
                 if kind == "levels":
-                    for (canvas, green_rect, yellow_rect, red_rect), db in zip(self.bars, payload):
-                        self._update_bar(canvas, green_rect, yellow_rect, red_rect, db)
+                    for i, db in enumerate(payload):
+                        bar = self.bars.get(i)
+                        if bar is not None:
+                            canvas, green_rect, yellow_rect, red_rect = bar
+                            self._update_bar(canvas, green_rect, yellow_rect, red_rect, db)
                 elif kind == "error":
                     self.title(f"VM error: {payload}")
         except queue.Empty:
